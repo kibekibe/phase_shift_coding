@@ -1,5 +1,7 @@
 #include "imgUtil.h"
 
+#include <fstream>
+
 std::vector<cv::Mat1b> readImages(const std::string & fileListPath)
 {
 

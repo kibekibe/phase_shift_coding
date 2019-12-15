@@ -61,13 +61,25 @@ struct PhaseShiftParam {
 
 };
 
+struct PhaseShiftDecodeParam {
+
+	enum UnwrapMethod {
+		None,
+		InitailMapBased
+	};
+
+
+	UnwrapMethod unwrapMethod;
+
+};
+
 struct SinPatternParam {
 
 	double amplitude;
 
 	double bias;
 
-	double waveLength; // ’PˆÊ‚Ípixel
+	int waveLength; // ’PˆÊ‚Ípixel
 
 	SinPatternParam();
 
@@ -76,6 +88,10 @@ struct SinPatternParam {
 
 cv::Mat1d calcPhaseMap(const std::vector<cv::Mat1b>& imgs, const PhaseShiftParam& param);
 
+
+
+
+cv::Mat1d unwrapFromInitialMap(const cv::Mat1f& initMap, const cv::Mat1d & wrappedMap, const cv::Mat1b& mask, const SinPatternParam& sinParam);
 
 std::vector<cv::Mat1b> genSinPatternImg(const SinPatternParam& param,
 										const cv::Size& imgSize,

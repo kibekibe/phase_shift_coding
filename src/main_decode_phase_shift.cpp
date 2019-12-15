@@ -91,8 +91,11 @@ void run_decode_patterns(int argc, char* argv[]) {
 
 	const char* keys =
 	{
-		"{fileList        | imageList.txt |}"
-		"{divisionNum | 8 |}"
+		"{fileList     | imageList.txt   |}"
+		"{waveLength   | 1024 |}"
+		"{mask         | validMask.png   |}"
+		"{unwrapMethod | initialMapBased |}"
+		"{divisionNum  | 8               |}"
 	};
 
 	CommandLineParser parser(argc, argv, keys);
@@ -101,12 +104,44 @@ void run_decode_patterns(int argc, char* argv[]) {
 
 	vector<Mat1b> imgList = readImages(fileListPath);
 
+	const cv::Mat1b mask = imread(parser.get<string>("mask"), 0);
 
 	const int divisionNum = parser.get<int>("divisionNum");
 
 	PhaseShiftParam psParam(divisionNum);
 
-	Mat1d phaseMap = calcPhaseMap(imgList, psParam);
+	SinPatternParam sinParam;
+	sinParam.waveLength = parser.get<int>("waveLength");
+
+	PhaseShiftDecodeParam::UnwrapMethod unwrapMethod;
+
+	const string methodName = parser.get<string>("unwrapMethod");
+	if (methodName == "initialMapBased") {
+		unwrapMethod = PhaseShiftDecodeParam::InitailMapBased;
+	}
+	else {
+		cout << "[Error] Unexpected method name." << endl;
+	}
+
+	Mat1d phaseMap;
+
+	if (unwrapMethod == PhaseShiftDecodeParam::InitailMapBased) {
+		CommandLineParser initialMapParser(argc, argv,
+			"{initialDecodedMap | initMap.exr|}");
+
+		const string initialDecodeMapName = parser.get<string>("initialDecodedMap");
+
+		const Mat1f initMap = imread(initialDecodeMapName, -1);
+
+		const Mat1d wrappedMap = calcPhaseMap(imgList, psParam);
+
+		const Mat1d unwrappedMap = unwrapFromInitialMap(initMap, wrappedMap, mask, sinParam);
+
+		phaseMap = unwrappedMap;
+	}
+	else if (unwrapMethod == PhaseShiftDecodeParam::None) {
+		phaseMap = calcPhaseMap(imgList, psParam);
+	}
 
 	double minVal, maxVal;
 	cv::minMaxLoc(phaseMap, &minVal, &maxVal);
@@ -118,12 +153,73 @@ void run_decode_patterns(int argc, char* argv[]) {
 	Mat colorMap;	
 	Mat1b scaledPhase1b;
 
+	if (unwrapMethod == PhaseShiftDecodeParam::InitailMapBased) {
+		
+		convertScaleAbs(phaseMap, scaledPhase1b, 255.0 / 1024 , 0);
+
+		applyColorMap(scaledPhase1b, colorMap, COLORMAP_JET);
+	}
+	else if (unwrapMethod == PhaseShiftDecodeParam::None) {
+		const double PI = 3.14159265358979;
+		convertScaleAbs(phaseMap, scaledPhase1b, 255 / 2 / PI, 127);
+
+		applyColorMap(scaledPhase1b, colorMap, COLORMAP_JET);
+	}
+
+	imwrite("colorMap.png", colorMap);
+}
+
+
+void test_initial_map_based_unwrapping() {
+
+	Mat1f initMap(20, 100);
+
+	for (int j = 0; j < initMap.rows; ++j) {
+		for (int i = 0; i < initMap.cols; ++i) {
+			initMap(j, i) = i;
+		}
+	}
+
+	const int divisionNum = 8;
+
+	
+
+	PhaseShiftParam psParam(divisionNum);
+	SinPatternParam sinPatternParam;
+	sinPatternParam.waveLength = 25;
+
+	Size patternImgSize(initMap.size());
+
+	std::vector<cv::Mat1b> patternImg = genSinPatternImg(sinPatternParam, patternImgSize, psParam.angleList);
+
+	const Mat1d wrappedMap = calcPhaseMap(patternImg, psParam);
+	{
+		Mat1b scaledPhase1b;
+		const double PI = 3.14159265358979;
+		convertScaleAbs(wrappedMap, scaledPhase1b, 255 / 2 / PI, 127);
+		Mat colorMap;
+		applyColorMap(scaledPhase1b, colorMap, COLORMAP_JET);
+		imwrite("wrapped.png", colorMap);
+	}
+	const Mat1b mask = Mat1b(initMap.size(), 255);
+	const Mat1d unwrappedMap = unwrapFromInitialMap(initMap, wrappedMap, mask, sinPatternParam);
+
+	double minVal, maxVal;
+	cv::minMaxLoc(unwrappedMap, &minVal, &maxVal);
+
+	cout << "min : " << minVal << endl;
+	cout << "max : " << maxVal << endl;
+
+	Mat colorMap;
+	Mat1b scaledPhase1b;
+
 	const double PI = 3.14159265358979;
-	convertScaleAbs(phaseMap, scaledPhase1b, 255 / 2 / PI, 127);
+	convertScaleAbs(unwrappedMap, scaledPhase1b, 255.0 / initMap.cols, 0);
 
 	applyColorMap(scaledPhase1b, colorMap, COLORMAP_JET);
 
-	imwrite("colorMap.png", colorMap);
+
+	imwrite("unwrapped.png", colorMap);
 }
 
 int main(int argc, char* argv[]) {
@@ -144,6 +240,9 @@ int main(int argc, char* argv[]) {
 	}
 	else if (mode == "decode_patterns") {
 		run_decode_patterns(argc, argv);
+	}
+	else if (mode == "test_initial_map_based_unwrapping") {
+		test_initial_map_based_unwrapping();
 	}
 
 	return 0;

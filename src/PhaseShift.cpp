@@ -68,8 +68,8 @@ cv::Mat1d calcPhaseMap(const std::vector<cv::Mat1b>& imgs, const PhaseShiftParam
 			double numer = 0.0; // •ªŽq
 
 			for (int t = 0; t < param.angleList.size(); ++t) {
-				denom += imgs[t](j, i) * param.cosList[t];
-				numer += imgs[t](j, i) * param.sinList[t];
+				denom += imgs[t](j, i) * param.sinList[t];
+				numer += imgs[t](j, i) * param.cosList[t];
 			}
 
 			double phase = atan2(numer, denom);
@@ -83,7 +83,62 @@ cv::Mat1d calcPhaseMap(const std::vector<cv::Mat1b>& imgs, const PhaseShiftParam
 	return phaseMap;
 }
 
-std::vector<cv::Mat1b> genSinPatternImg(const SinPatternParam& param, 
+/// convert radian value (0 ~ pi ~ -pi ~ 0) -> ( 0 ~ waveLength )
+cv::Mat1d convertRadToImgCoord(const cv::Mat1d& phaseMap, const int waveLength ) {
+
+	Mat1d dstMap = phaseMap.clone();
+
+	constexpr double M_PI = 3.14159265359;
+
+	for (int j = 0; j < dstMap.rows; ++j) {
+		for (int i = 0; i < dstMap.cols; ++i) {
+
+			if (dstMap(j, i) < 0.0) {
+				dstMap(j, i) = phaseMap(j, i) + 2 * M_PI;
+			}
+		}
+	}
+
+	dstMap *= waveLength * 0.5 / M_PI;
+
+	return dstMap;
+}
+
+cv::Mat1d unwrapFromInitialMap(const cv::Mat1f& initMap, const cv::Mat1d & wrappedMap, const cv::Mat1b& mask, const SinPatternParam& sinParam)
+{
+	Mat1d wrappedImgCoordMap = convertRadToImgCoord(wrappedMap, sinParam.waveLength);
+
+	Mat1d unwrappedImgCoordMap = wrappedImgCoordMap.clone(); //Mat1d::zeros(wrappedImgCoordMap.size());
+
+	for (int j = 0; j < mask.rows; ++j) {
+		for (int i = 0; i < mask.cols; ++i) {
+			if (mask(j, i) == 0) {
+				continue;
+			}
+
+			float localGray = int(initMap(j, i)) % sinParam.waveLength;
+			
+			int   localGrayID = int(initMap(j, i)) / sinParam.waveLength;
+			
+
+			if (wrappedImgCoordMap(j, i) - localGray > 0.6 * sinParam.waveLength) {
+				unwrappedImgCoordMap(j, i) += sinParam.waveLength * (localGrayID - 1);
+			}
+			else if (localGray - wrappedImgCoordMap(j, i) > 0.6 * sinParam.waveLength) {
+				unwrappedImgCoordMap(j, i) += sinParam.waveLength * (localGrayID + 1);
+			}
+			else {
+				unwrappedImgCoordMap(j, i) += sinParam.waveLength * localGrayID;
+			}
+
+
+		}
+	}
+
+	return unwrappedImgCoordMap;
+}
+
+std::vector<cv::Mat1b> genSinPatternImg(const SinPatternParam& param,
 										const cv::Size& imgSize,
 										const std::vector<double>& phaseList)
 {
@@ -103,7 +158,7 @@ std::vector<cv::Mat1b> genSinPatternImg(const SinPatternParam& param,
 		vector<uchar> scanline(imgSize.width);
 
 		for (int x = 0; x < imgSize.width; ++x) {
-			double val = param.amplitude * cos((x / param.waveLength + (double)t / ImgNum ) * 2 * PI  ) + param.bias + 0.5;
+			double val = param.amplitude * sin((x / (double)param.waveLength + (double)t / ImgNum ) * 2 * PI  ) + param.bias + 0.5;
 			scanline[x] = int(val + 0.5);
 		}
 
